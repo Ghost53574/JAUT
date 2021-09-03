@@ -1,7 +1,7 @@
 using System;
 using System.IO.Compression;
 
-namespace Packer {
+namespace FUCK {
     class Program {
         static byte[] RC4(byte[] input, byte[] key) {
             byte[] result = new byte[input.Length];
@@ -84,15 +84,13 @@ namespace Packer {
             image[image_size_bytes + 4] = 0xEF;
             image_size_bytes += 4;
 
-            mimi = Program.RC4(mimi, System.Text.Encoding.ASCII.GetBytes(password));
-
             using (System.IO.MemoryStream ms = new System.IO.MemoryStream()) {
                 using (GZipStream gz = new GZipStream(ms, CompressionLevel.Optimal)) {
                     gz.Write(mimi, 0, (int)file_size_bytes);
                     ms.Seek(0, System.IO.SeekOrigin.Begin);
                 }
 
-                byte[] gz_bytes = ms.ToArray();
+                byte[] gz_bytes = mimi = Program.RC4(ms.ToArray(), System.Text.Encoding.ASCII.GetBytes(password));
 
                 Console.WriteLine("GZ bytes:\t{0}", gz_bytes.Length);
 
