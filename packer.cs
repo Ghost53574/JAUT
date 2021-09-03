@@ -1,7 +1,8 @@
 using System;
+using System.Security.Cryptography;
 using System.IO.Compression;
 
-namespace FUCK {
+namespace Packer {
     class Program {
         static byte[] RC4(byte[] input, byte[] key) {
             byte[] result = new byte[input.Length];
@@ -24,6 +25,23 @@ namespace FUCK {
                 result[i] = (byte)(input[i] ^ box[(box[y] + box[j]) % 256]);
             }
             return result;
+        }
+
+        public static byte[] RollingXor(string password) {
+            byte[] key = new byte[password.Length - 1];
+            key[0] = (byte)(password[0] ^ (byte)password[1]);
+            for (int i = 2; i <= key.Length; i++) {
+                byte next = (byte)(key[i - 1] ^ (byte)password[i]);
+                key[i - 1] = next;
+            }
+            return key;
+        }
+
+        public static void PrintBytes(byte[] bs) {
+            for (int i = 0; i < bs.Length; i++) {
+                Console.Write(String.Format("0x{0} ", bs[i].ToString("X2")));
+            }
+            Console.Write("\n");
         }
 
         static readonly string banner = "* * * * * * * * * * * * * * * *\n* ./encrypt <key> <img> <exe> <out> *\n* * * * * * * * * * * * * * * *\n*note: full paths please";
@@ -54,6 +72,10 @@ namespace FUCK {
                 Console.WriteLine("Overwriting {0}...", payload_path);
                 System.IO.File.Delete(payload_path);
             }
+
+            byte[] key = RollingXor(password);
+            Console.Write("Key: ");
+            PrintBytes(key);
 
             image_size_bytes = (uint)new System.IO.FileInfo(image_path).Length;
             file_size_bytes = (uint)new System.IO.FileInfo(file_path).Length;
@@ -90,9 +112,9 @@ namespace FUCK {
                     ms.Seek(0, System.IO.SeekOrigin.Begin);
                 }
 
-                byte[] gz_bytes = mimi = Program.RC4(ms.ToArray(), System.Text.Encoding.ASCII.GetBytes(password));
+                byte[] gz_bytes = mimi = Program.RC4(ms.ToArray(), key);
 
-                Console.WriteLine("GZ bytes:\t{0}", gz_bytes.Length);
+                Console.WriteLine("GZ bytes:\t\t{0}", gz_bytes.Length);
 
                 for (int i = 0; i < gz_bytes.Length; i++) {
                     image[image_size_bytes + i] = gz_bytes[i];
@@ -100,7 +122,7 @@ namespace FUCK {
 
                 image_size_bytes += (uint)gz_bytes.Length;
 
-                Console.WriteLine("Free bytes:\t{0}", ((int)file_size_bytes - (int)image_size_bytes));
+                Console.WriteLine("Free bytes:\t\t{0}", ((int)file_size_bytes - (int)image_size_bytes));
 
                 using (System.IO.FileStream fs = new System.IO.FileStream(payload_path, System.IO.FileMode.CreateNew)) {
                     fs.Write(image, 0, (int)image_size_bytes);
