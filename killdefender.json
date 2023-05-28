@@ -1,0 +1,33 @@
+{
+    "name": "killdefender",
+    "version": "1.0.0",
+    "command_name": "killdefender",
+    "extension_author": "c0z",
+    "original_author": "Octoberfest7",
+    "repo_url": "https://github.com/Octoberfest7/KillDefender_BOF",
+    "help": "Kill defender before 2022-06-28",
+    "long_help": "Check status of or Kill Windows Defender.",
+    "depends_on": "coff-loader",
+    "entrypoint": "go",
+    "files": [
+        {
+            "os": "windows",
+            "arch": "amd64",
+            "path": "KillDefender.x64.o"
+        }
+    ],
+    "arguments": [
+        {
+            "name": "check",
+            "desc": "Check MsMpEng.exe's token in order to determine if KillDefender has already been run.",
+            "type": "string",
+            "optional": true
+        },
+        {
+            "name": "kill",
+            "desc": "Remove privileges and set MsMpEng.exe token to untrusted rendering Defender useless (but still running).",
+            "type": "string",
+            "optional": true
+        }
+    ]
+}
